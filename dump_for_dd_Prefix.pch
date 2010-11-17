@@ -1,0 +1,8 @@
+//
+// Prefix header for all source files of the 'dump-for-dd' target in the 'dump-for-dd' project
+//
+
+#ifdef __OBJC__
+    #import <Foundation/Foundation.h>
+    #import <UIKit/UIKit.h>
+#endif

@@ -1,0 +1,181 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+  <head>
+	<!-- Change this if you want to allow scaling -->
+    <meta name="viewport" content="width=default-width; user-scalable=no" />
+
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8">
+
+    <title>dump-for-dd</title>
+	
+	<!-- iPad/iPhone specific css below, add after your main css >
+	<link rel="stylesheet" media="only screen and (max-device-width: 1024px)" href="ipad.css" type="text/css" />		
+	<link rel="stylesheet" media="only screen and (max-device-width: 480px)" href="iphone.css" type="text/css" />		
+	-->
+	<link rel="stylesheet" href="lib/jquery.mobile-1.0a2.min.css" />
+
+	<script type="text/javascript" charset="utf-8" src="phonegap.js"></script>
+	<script type="text/javascript" src="lib/jquery-1.4.4.min.js"></script>
+	<script type="text/javascript" src="lib/jquery.mobile-1.0a2.js"></script>
+    <script type="text/javascript" src="dump-for-dd.js"></script>
+
+    <script type="text/javascript" charset="utf-8">
+
+
+	// If you want to prevent dragging, uncomment this section
+	/*
+	function preventBehavior(e) 
+	{ 
+      e.preventDefault(); 
+    };
+	document.addEventListener("touchmove", preventBehavior, false);
+	*/
+	
+	function onBodyLoad()
+	{
+		// デバイスじゃなければそのまま関数を実行
+		if (navigator.notification) {
+			document.addEventListener("deviceready",onDeviceReady,false);
+		}
+		else {
+			onDeviceReady();
+		}
+
+	}
+	
+	/* When this function is called, PhoneGap has been initialized and is ready to roll */
+	function onDeviceReady()
+	{
+        // 既にurlに入力したことがあればそれを入力
+        if (localStorage.dd) {
+            $('input[name=url]').val(localStorage.dd);
+        }
+
+        // フィルタのsubmitでページ遷移してしまわないように
+        // filterが作られたらsubmit処理を上書きする
+        $('div').live('pagecreate', function() {
+            $('form[role=search]').submit(function(){
+                return false;
+            });
+        });
+
+        var tmpl = $('#pageTmpl').val();
+        var makePage = function(jsonStr, id) {
+            $.mobile.pageLoading();
+  
+            var $div = $('#' + id);
+            if ($div) {
+                $div.remove();   // idが被らないように既にある場合には削除してしまう
+            }
+  
+            $div = $(tmpl);
+            $div.attr('id', id);
+  
+            var dd = DumpForDD();
+            var $dumpedJson = $(dd.parse(jsonStr));
+  
+            if ($dumpedJson.is('ul')) {
+                $div
+                    .find('> div[data-role=content]')
+                        .html($dumpedJson)
+                        .find('ul')
+                            .attr('data-role', 'listview')
+                            .data('filter', 'true')
+                            .find('li')
+                                .wrapInner('<a href="' + '#list' + Date.now() + '"></a>')
+                                .find('a').click(function(ev){  // liveだとdivを作る前に#idへ飛んでしまうためclickにしてある
+                                    var $this = $(this);
+                                    var $li = $this.parents('li');
+                                    makePage(unescape($li.data('dd-next')), $this.attr('href').substring(1));
+                                });
+            }
+            else { // if $dumpedJson.is('p')
+                $div.find('> div[data-role=content]').html($dumpedJson)
+            }
+  
+            $('body').append($div);
+            $.mobile.pageLoading(true)
+        }
+  
+        var dump = function(ev){
+            var nextId = $(this).attr('href').substring(1);
+  
+            var jsonStr = $(this).parent().find('textarea').val();
+            if (jsonStr) {
+                makePage(jsonStr, nextId);
+            }
+            else {
+                // $.getでdivが作られる前に$.mobileのchangePageが呼ばれてしまうので
+                // キャンセルしておいて自前でchangePageを呼ぶ
+                ev.stopPropagation();
+                ev.preventDefault();
+  
+                $.mobile.pageLoading();
+  
+                var url = $(this).parent().find('input[name=url]').val();
+                if (!url) {
+                    $.mobile.pageLoading(true);
+  
+                    var errorMessage = 'urlがないよ';
+                    try {
+                        navigator.notification.beep();
+                        navigator.notification.vibrate();
+                        navigator.notification.alert(errorMessage, function(){}, 'error', 'ok');
+                    }
+                    catch(e) {
+                        alert(errorMessage);
+                    }
+  
+                    return false;  // errorの場合は何もせずに抜ける
+                }
+                localStorage.dd = url; // 復帰後に入力するようにlocalStorageに保存
+  
+                $.get(url, function(response) {	  	 
+                    $.mobile.pageLoading(true);
+  
+                    makePage(response, nextId);
+                    $.mobile.changePage(nextId, 'slide', false, true); // backの遷移にならないように第3引数はfalse
+                });
+            }
+        };
+  
+        // 初期化処理
+        // Dumpボタンのクリック処理
+        $('#home')
+            .find('a')
+                .click(dump)
+            .end()
+            .find('input[name=url]')
+                .keydown(function(ev) {
+                    // inputのreturnでもaタグのclickでも動くようにparent()			
+                    if (ev.keyCode === 13) {
+                        $(this).parent().find('a').click();
+                    }
+                });
+  }
+    
+    </script>
+  </head>
+  <body onload="onBodyLoad()">
+	<div id="home" data-role="page" data-theme="c">
+		<div data-role="header">
+			<h1>JSON Dumper</h1>
+		</div>
+		<div data-role="content">
+			<input type="text" name="url" value="" placeholder="input url">
+			<a href="#dump" data-role="button">Dump</a>
+			<textarea placeholder="debug"></textarea>
+		</div>
+	</div><!-- /#home -->
+	
+	<textarea id="pageTmpl" style="display:none;">
+	<div data-role="page">
+		<div data-role="header">
+			<h1>Dump</h1>
+		</div>
+		<div data-role="content">
+		</div>
+	</div>
+	</textarea>
+  </body>
+</html>
